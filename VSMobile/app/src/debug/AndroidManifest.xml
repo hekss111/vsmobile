@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Только для debug-сборки: разрешает http:// к локальному серверу (10.0.2.2 / IP компьютера).
+         В release-сборке остаётся запрет, там нужен https://. -->
+    <application android:usesCleartextTraffic="true" />
+</manifest>

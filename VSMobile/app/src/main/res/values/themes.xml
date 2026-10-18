@@ -1,0 +1,7 @@
+<resources>
+    <style name="Theme.VSMobile" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">#1E1E1E</item>
+        <item name="android:navigationBarColor">#1E1E1E</item>
+        <item name="android:windowBackground">#1E1E1E</item>
+    </style>
+</resources>
