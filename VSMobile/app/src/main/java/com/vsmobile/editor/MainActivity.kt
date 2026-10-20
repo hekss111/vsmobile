@@ -21,6 +21,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.chaquo.python.Python
 import com.chaquo.python.android.AndroidPlatform
+import com.vsmobile.editor.plugins.PluginPanelHost
 import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
@@ -88,6 +89,8 @@ fun VSMobileApp() {
         }
     }
     if (showPromo) PromoDialog(onDismiss = { showPromo = false })
+    PluginDialogHost(vm)
+    PluginPanelHost(vm)
 
     val project = vm.currentProject
     if (project != null) {
@@ -109,7 +112,7 @@ fun VSMobileApp() {
                 showAuth = true
             }
         )
-        showPlugins -> PluginsScreen(onBack = { showPlugins = false })
+        showPlugins -> PluginsScreen(onBack = { showPlugins = false }, manager = vm.plugins)
         showSettings -> SettingsScreen(
             repo = vm.repo,
             account = vm.account,

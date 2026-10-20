@@ -1,0 +1,14 @@
+{
+  "format": "vsm",
+  "version": 2,
+  "id": "hello",
+  "name": "Hello",
+  "pluginVersion": "1.0.0",
+  "description": "Вставляет приветствие вместо выделения",
+  "author": "VSMobile",
+  "permissions": ["editor", "ui"],
+  "commands": [
+    { "id": "greet", "title": "Привет", "pin": true }
+  ],
+  "code": "vsm.command('greet', function () { var name = vsm.ui.prompt('Приветствие', 'Ваше имя', 'мир'); if (name === null) return; vsm.editor.replaceSelection('Привет, ' + name + '!'); vsm.ui.toast('Готово'); });"
+}

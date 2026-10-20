@@ -1,0 +1,14 @@
+{
+  "format": "vsm",
+  "version": 2,
+  "id": "hang",
+  "name": "Hang Test",
+  "pluginVersion": "1.0.0",
+  "description": "Проверка watchdog: бесконечный цикл",
+  "author": "VSMobile",
+  "permissions": [],
+  "commands": [
+    { "id": "spin", "title": "Зависнуть" }
+  ],
+  "code": "vsm.command('spin', function () { while (true) {} });"
+}

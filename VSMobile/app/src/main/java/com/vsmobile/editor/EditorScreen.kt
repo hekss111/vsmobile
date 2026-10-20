@@ -41,9 +41,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
+import com.vsmobile.editor.plugins.ActivePanel
+import com.vsmobile.editor.plugins.InstalledPlugin
+import com.vsmobile.editor.plugins.Permission
 import com.vsmobile.editor.plugins.PluginContext
-import com.vsmobile.editor.plugins.PluginRuntime
-import com.vsmobile.editor.plugins.PluginStore
 import com.vsmobile.editor.plugins.VsmPlugin
 import kotlin.math.roundToInt
 
@@ -67,6 +68,9 @@ fun EditorScreen(vm: EditorViewModel, project: DocumentFile, onOpenSettings: () 
     var showDeleteConfirm by remember { mutableStateOf<DocumentFile?>(null) }
     var showAiChat by remember { mutableStateOf(false) }
     var showPluginDialog by remember { mutableStateOf(false) }
+    val pluginItems by produceState<List<InstalledPlugin>>(emptyList(), project.uri) {
+        value = withContext(Dispatchers.IO) { vm.pluginStore.list().filter { it.enabled } }
+    }
 
     val openFolderLauncher = rememberLauncherForActivityResult(
         contract = OpenTreeContract()
@@ -78,6 +82,7 @@ fun EditorScreen(vm: EditorViewModel, project: DocumentFile, onOpenSettings: () 
     BackHandler(enabled = showAiChat) { showAiChat = false }
 
     var treeRefresh by remember { mutableStateOf(0) }
+    LaunchedEffect(vm.fsVersion) { if (vm.fsVersion > 0) treeRefresh++ }
     val dragState = remember { DragDropState() }
 
     // Дерево файлов читаем в фоне и кэшируем, чтобы при отрисовке не дёргать провайдер на главном потоке.
@@ -123,24 +128,23 @@ fun EditorScreen(vm: EditorViewModel, project: DocumentFile, onOpenSettings: () 
     fun runPluginCommand(plugin: VsmPlugin, commandId: String) {
         val idx = activeTabIndex
         val tab = openTabs.getOrNull(idx)
-        if (tab == null) {
-            Toast.makeText(context, "Откройте файл, чтобы запустить команду", Toast.LENGTH_SHORT).show()
-            return
-        }
-        val selection = tab.content.selection
+        val selection = tab?.content?.selection
         val pluginContext = PluginContext(
-            fileName = tab.file.name ?: "",
-            text = tab.content.text,
-            selectionStart = selection.start,
-            selectionEnd = selection.end
+            fileName = tab?.file?.name ?: "",
+            text = tab?.content?.text ?: "",
+            selectionStart = selection?.start ?: 0,
+            selectionEnd = selection?.end ?: 0
         )
+        val tabUri = tab?.file?.uri?.toString()
         scope.launch {
-            val result = withContext(Dispatchers.IO) { PluginRuntime.run(plugin, commandId, pluginContext) }
+            val result = withContext(Dispatchers.IO) {
+                vm.plugins.runCommand(plugin.id, commandId, pluginContext, tabUri)
+            }
             result.fold(
                 onSuccess = { r ->
                     r.text?.let { newText ->
                         val current = openTabs.getOrNull(idx)
-                        if (current != null && current.file.uri == tab.file.uri) {
+                        if (tab != null && current != null && current.file.uri == tab.file.uri) {
                             openTabs[idx] = current.copy(
                                 content = TextFieldValue(newText, androidx.compose.ui.text.TextRange(newText.length)),
                                 isDirty = true
@@ -372,11 +376,13 @@ fun EditorScreen(vm: EditorViewModel, project: DocumentFile, onOpenSettings: () 
                                             content = newVal,
                                             isDirty = tab.isDirty || newVal.text != tab.content.text
                                         )
+                                        if (newVal.text != tab.content.text) vm.onTextChanged(tab.file.name ?: "")
                                     },
                                     language = language,
                                     modifier = Modifier.fillMaxSize()
                                 )
                             }
+                            PinnedCommandsBar(pluginItems) { plugin, commandId -> runPluginCommand(plugin, commandId) }
                             QuickSymbolsBar(onInsert = { symbol ->
                                 val cur = openTabs[activeTabIndex]
                                 val sel = cur.content.selection
@@ -505,25 +511,30 @@ fun EditorScreen(vm: EditorViewModel, project: DocumentFile, onOpenSettings: () 
     }
 
     if (showPluginDialog) {
-        val plugins by produceState<List<VsmPlugin>?>(null) {
-            value = withContext(Dispatchers.IO) { PluginStore(context).list() }
-        }
         AlertDialog(
             onDismissRequest = { showPluginDialog = false },
             title = { Text("Команды плагинов") },
             text = {
-                val list = plugins
+                val list = pluginItems
                 Column {
                     when {
-                        list == null -> LinearProgressIndicator(Modifier.fillMaxWidth())
                         list.isEmpty() -> Text("Плагины не установлены. Добавьте .vsm в разделе «Плагины».")
-                        else -> list.forEach { plugin ->
+                        else -> list.forEach { item ->
+                            val plugin = item.plugin
                             Text(plugin.name, fontWeight = FontWeight.Bold)
                             plugin.commands.forEach { command ->
                                 TextButton(onClick = {
                                     showPluginDialog = false
                                     runPluginCommand(plugin, command.id)
                                 }) { Text(command.title) }
+                            }
+                            if (Permission.UI in item.granted) {
+                                plugin.panels.forEach { panel ->
+                                    TextButton(onClick = {
+                                        showPluginDialog = false
+                                        vm.activePanel = ActivePanel(plugin.id, panel.id)
+                                    }) { Text(panel.title) }
+                                }
                             }
                         }
                     }

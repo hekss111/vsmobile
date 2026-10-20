@@ -13,7 +13,19 @@ import androidx.documentfile.provider.DocumentFile
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.viewModelScope
+import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.vsmobile.editor.net.AccountRepository
+import com.vsmobile.editor.plugins.ActivePanel
+import com.vsmobile.editor.plugins.AndroidHostEnv
+import com.vsmobile.editor.plugins.PluginLanguages
+import com.vsmobile.editor.plugins.PluginManager
+import com.vsmobile.editor.plugins.PluginStore
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import org.json.JSONObject
+import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -49,6 +61,20 @@ class EditorViewModel(
     val account = AccountRepository(app)
     val console = PythonConsole(viewModelScope)
 
+    val context: Context get() = app
+    val pluginStore = PluginStore.forContext(app)
+    val pluginDialogs = mutableStateListOf<PluginDialog>()
+    var activePanel by mutableStateOf<ActivePanel?>(null)
+    var fsVersion by mutableStateOf(0)
+    val panelSinks = ConcurrentHashMap<String, (String) -> Unit>()
+    val plugins = PluginManager(
+        store = pluginStore,
+        envFactory = { AndroidHostEnv(this, it) },
+        shim = app.assets.open("vsm_shim.js").bufferedReader().use { it.readText() },
+        onHung = { id -> Handler(Looper.getMainLooper()).post { toast("Плагин «$id» завис и отключён") } }
+    )
+    private var textChangedJob: Job? = null
+
     var currentProject by mutableStateOf<DocumentFile?>(null)
     var expandedDirs by mutableStateOf(setOf<String>())
     val openTabs = mutableStateListOf<OpenTab>()
@@ -59,6 +85,7 @@ class EditorViewModel(
     private val fileMutex = Mutex()
 
     init {
+        viewModelScope.launch(Dispatchers.IO) { startPlugins() }
         viewModelScope.launch {
             restore()
             // Начинаем сохранять состояние только после восстановления, иначе пустое состояние затрёт сохранённое.
@@ -99,9 +126,28 @@ class EditorViewModel(
 
     private fun toast(text: String) = Toast.makeText(app, text, Toast.LENGTH_SHORT).show()
 
+    private fun startPlugins() {
+        PluginLanguages.rebuild(pluginStore.list())
+        plugins.startAll()
+        plugins.emit("app.started", "{}")
+    }
+
+    private fun emitEvent(event: String, name: String?) {
+        plugins.emit(event, JSONObject().put("name", name ?: "").toString())
+    }
+
+    fun onTextChanged(name: String) {
+        textChangedJob?.cancel()
+        textChangedJob = viewModelScope.launch {
+            delay(300)
+            emitEvent("text.changed", name)
+        }
+    }
+
     fun openProject(doc: DocumentFile) {
         expandedDirs = setOf(doc.uri.toString())
         currentProject = doc
+        emitEvent("project.opened", doc.name)
     }
 
     /** Открывает выбранную папку как проект; текущие вкладки сохраняются и закрываются. */
@@ -118,6 +164,7 @@ class EditorViewModel(
     }
 
     fun closeProject() {
+        emitEvent("project.closed", currentProject?.name)
         saveAllTabs()
         openTabs.clear()
         activeTabIndex = -1
@@ -135,6 +182,7 @@ class EditorViewModel(
             val ok = fileMutex.withLock { repo.writeText(file, text) }
             withContext(Dispatchers.Main) {
                 if (ok) {
+                    emitEvent("file.saved", file.name)
                     // Пока писали, текст могли изменить — тогда вкладка остаётся «грязной».
                     val i = openTabs.indexOfFirst { it.file.uri == file.uri }
                     if (i >= 0 && openTabs[i].content.text == text) {
@@ -155,6 +203,7 @@ class EditorViewModel(
         val ok = runBlocking { fileMutex.withLock { repo.writeText(tab.file, tab.content.text) } }
         if (ok) {
             openTabs[idx] = tab.copy(isDirty = false)
+            emitEvent("file.saved", tab.file.name)
         } else {
             toast("Не удалось сохранить «${tab.file.name}»")
         }
@@ -186,6 +235,7 @@ class EditorViewModel(
                 is ReadResult.Ok -> {
                     openTabs.add(OpenTab(file, TextFieldValue(res.text)))
                     activeTabIndex = openTabs.size - 1
+                    emitEvent("file.opened", file.name)
                 }
                 is ReadResult.Failed -> toast(res.reason)
             }
@@ -195,6 +245,7 @@ class EditorViewModel(
     fun closeTab(idx: Int, save: Boolean = true) {
         if (idx !in openTabs.indices) return
         if (save) saveTab(idx)
+        emitEvent("file.closed", openTabs[idx].file.name)
         openTabs.removeAt(idx)
         activeTabIndex = when {
             openTabs.isEmpty() -> -1

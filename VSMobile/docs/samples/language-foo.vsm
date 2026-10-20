@@ -1,0 +1,21 @@
+{
+  "format": "vsm",
+  "version": 2,
+  "id": "language-foo",
+  "name": "Foo Language",
+  "pluginVersion": "1.0.0",
+  "description": "Подсветка языка .foo",
+  "author": "VSMobile",
+  "permissions": [],
+  "languages": [
+    {
+      "extensions": ["foo"],
+      "keywords": ["let", "fn", "if", "else", "return"],
+      "rules": [
+        { "regex": "//.*", "color": "#6A9955", "italic": true },
+        { "regex": "\"[^\"]*\"", "color": "#CE9178" },
+        { "regex": "\\b\\d+\\b", "color": "#B5CEA8" }
+      ]
+    }
+  ]
+}

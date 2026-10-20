@@ -7,3 +7,8 @@
 
 # ViewModel создаётся фабрикой через рефлексию по конструктору (Application, SavedStateHandle).
 -keep class com.vsmobile.editor.EditorViewModel { <init>(...); }
+
+# QuickJS вызывает методы моста из JavaScript по имени.
+-keep class com.vsmobile.editor.plugins.** { *; }
+-keep class app.cash.quickjs.** { *; }
+-dontwarn app.cash.quickjs.**

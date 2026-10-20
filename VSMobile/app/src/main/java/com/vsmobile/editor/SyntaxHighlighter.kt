@@ -1,5 +1,7 @@
 package com.vsmobile.editor
 
+import com.vsmobile.editor.plugins.PluginLanguages
+
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
@@ -72,7 +74,8 @@ object SyntaxHighlighter {
         Regex("""#.*|"(?:[^"\\\n]|\\.)*"|'(?:[^'\\\n]|\\.)*'""")
 
     fun highlight(text: String, language: String): AnnotatedString {
-        val keywords = keywordsFor(language)
+        val pluginLanguage = PluginLanguages.find(language)
+        val keywords = keywordsFor(language) + (pluginLanguage?.keywords ?: emptySet())
         val builder = AnnotatedString.Builder(text)
 
         fun applyAll(regex: Regex, style: SpanStyle) {
@@ -107,6 +110,16 @@ object SyntaxHighlighter {
             val first = m.value[0]
             val style = if (first == '"' || first == '\'') stringStyle else commentStyle
             builder.addStyle(style, m.range.first, m.range.last + 1)
+        }
+
+        pluginLanguage?.rules?.forEach { rule ->
+            val style = SpanStyle(
+                color = Color(rule.colorArgb),
+                fontStyle = if (rule.italic) FontStyle.Italic else null
+            )
+            for (m in rule.regex.findAll(text)) {
+                if (m.value.isNotEmpty()) builder.addStyle(style, m.range.first, m.range.last + 1)
+            }
         }
 
         return builder.toAnnotatedString()
